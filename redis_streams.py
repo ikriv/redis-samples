@@ -9,8 +9,8 @@ NUMBER_OF_LOGINS = 50
 TIME_BETWEEN_LOGINS_MS = 100
 NOTIFICATIONS_GROUP = "notifications"
 ANALYTICS_GROUP = "analytics"
-STOP_MESSAGE_TYPE = "stop"
-LOGIN_MESSAEG_TYPE = "login"
+RECORD_TYPE_STOP = "stop"
+RECORD_TYPE_LOGIN = "login"
 ANALYTICS_HASH = "analytics"
 NUM_NOTIFICATION_SERVICES = 2
 NUM_ANALYTICS_SERVICES = 3
@@ -41,7 +41,7 @@ async def generate_logins():
         user = random.choice(USERS)
         await r.xadd(
             LOGIN_STREAM,
-            {"type": LOGIN_MESSAEG_TYPE, "user": user, "time": time.time()},
+            {"type": RECORD_TYPE_LOGIN, "user": user, "time": time.time()},
         )
         await asyncio.sleep(TIME_BETWEEN_LOGINS_MS / 1000)
 
@@ -57,15 +57,15 @@ async def notification_service(id):
             continue
 
         for _stream, messages in response:
-            for message_id, data in messages:
-                type = data.get("type")
-                if type == STOP_MESSAGE_TYPE:
+            for message_id, message_data in messages:
+                type = message_data.get("type")
+                if type == RECORD_TYPE_STOP:
                     print(f"{consumer_name}: STOP")
                     await r.xack(LOGIN_STREAM, NOTIFICATIONS_GROUP, message_id)
                     return
-                if type == LOGIN_MESSAEG_TYPE:
+                if type == RECORD_TYPE_LOGIN:
                     print(
-                        f"{consumer_name}: login notification for {data["user"]} at {data["time"]}"
+                        f"{consumer_name}: login notification for {message_data["user"]} at {message_data["time"]}"
                     )
                     await r.xack(LOGIN_STREAM, NOTIFICATIONS_GROUP, message_id)
                     continue
@@ -91,11 +91,11 @@ async def analytics_service(id):
         for _stream, messages in response:
             for message_id, data in messages:
                 type = data.get("type")
-                if type == STOP_MESSAGE_TYPE:
+                if type == RECORD_TYPE_STOP:
                     print(f"{consumer_name}: STOP")
                     await r.xack(LOGIN_STREAM, ANALYTICS_GROUP, message_id)
                     return
-                if type == LOGIN_MESSAEG_TYPE:
+                if type == RECORD_TYPE_LOGIN:
                     await add_login_to_analytics(data["user"])
                     await r.xack(LOGIN_STREAM, ANALYTICS_GROUP, message_id)
                     continue
@@ -162,7 +162,7 @@ async def main():
     await producer
 
     for _ in range(max(NUM_NOTIFICATION_SERVICES, NUM_ANALYTICS_SERVICES)):
-        await r.xadd(LOGIN_STREAM, {"type": STOP_MESSAGE_TYPE})
+        await r.xadd(LOGIN_STREAM, {"type": RECORD_TYPE_STOP})
 
     await asyncio.gather(*notifications, *analytics)
 
